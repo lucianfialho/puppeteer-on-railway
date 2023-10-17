@@ -1,14 +1,12 @@
 const http = require("http");
+const url = require("url"); // Importe o módulo 'url'
+const puppeteer = require("puppeteer");
 const PORT = 3000;
 
-const server = http.createServer((req, res) => {
-  res.statusCode = 200;
-  res.setHeader("Content-Type", "text/plain");
-  res.end("Hello World!");
-});
+const server = http.createServer(async (req, res) => {
+  const parsedUrl = url.parse(req.url, true); // Analise a URL para obter os parâmetros
 
-app.get("/screenshot", async (req, res) => {
-  const query = req.query.q || "puppeteer"; // Consulta padrão se não for especificada na URL
+  const query = parsedUrl.query.q || "puppeteer"; // Consulta padrão se não for especificada na URL
 
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
@@ -19,8 +17,8 @@ app.get("/screenshot", async (req, res) => {
 
   await browser.close();
 
-  res.set("Content-Type", "image/png");
-  res.send(screenshot);
+  res.setHeader("Content-Type", "image/png"); // Use 'setHeader' para definir o cabeçalho
+  res.end(screenshot); // Use 'end' para enviar a resposta
 });
 
 server.listen(PORT, () => {
