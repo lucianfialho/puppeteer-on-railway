@@ -5,7 +5,8 @@
   "main": "index.js",
   "author": "alphasec",
   "license": "MIT",
-   "dependencies": {
+  "dependencies": {
+    "puppeteer": "^21.3.8"
   },
   "scripts": {
     "start": "node index.js"
