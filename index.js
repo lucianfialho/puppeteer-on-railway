@@ -8,7 +8,11 @@ const server = http.createServer(async (req, res) => {
 
   const query = parsedUrl.query.q || "puppeteer"; // Consulta padrão se não for especificada na URL
 
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    ignoreDefaultArgs: ["--disable-extensions"],
+  });
+
   const page = await browser.newPage();
 
   await page.goto(`https://www.google.com/search?q=${query}`);
