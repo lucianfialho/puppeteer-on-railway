@@ -6,7 +6,7 @@ const PORT = 3000;
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true); // Analise a URL para obter os parâmetros
 
-  const query = parsedUrl.query.q || "puppeteer"; // Consulta padrão se não for especificada na URL
+  const query = parsedUrl.query.q || "metricasboss"; // Consulta padrão se não for especificada na URL
 
   const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
