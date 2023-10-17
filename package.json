@@ -8,7 +8,6 @@
    "dependencies": {
   },
   "scripts": {
-    "build": "node node_modules/puppeteer/install.js",
     "start": "node index.js"
   }
 }
