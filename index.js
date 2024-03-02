@@ -1,30 +1,18 @@
-const http = require("http");
-const url = require("url"); // Importe o módulo 'url'
-const puppeteer = require("puppeteer");
-const PORT = 3000;
+const express = require("express");
 
-const server = http.createServer(async (req, res) => {
-  const parsedUrl = url.parse(req.url, true); // Analise a URL para obter os parâmetros
+const generateImage = require("./lib/generateImage");
+const previewImage = require("./lib/previewImage");
 
-  const query = parsedUrl.query.q || "metricasboss"; // Consulta padrão se não for especificada na URL
+const app = express();
+const port = 3000;
 
-  const browser = await puppeteer.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    ignoreDefaultArgs: ["--disable-extensions"],
-  });
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-  const page = await browser.newPage();
+app.get("/generate-image", generateImage);
 
-  await page.goto(`https://www.google.com/search?q=${query}`);
-  await page.waitForTimeout(2000);
-  const screenshot = await page.screenshot();
+app.get("/preview", previewImage);
 
-  await browser.close();
-
-  res.setHeader("Content-Type", "image/png"); // Use 'setHeader' para definir o cabeçalho
-  res.end(screenshot); // Use 'end' para enviar a resposta
-});
-
-server.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
 });
