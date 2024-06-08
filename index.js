@@ -36,7 +36,9 @@ app.get("/search", checkApiToken, async (req, res) => {
   }
 
   try {
-    const results = await getAllResults(`"${query} -site:${query}"`);
+    const results = await getAllResults(
+      `"${query}" -site:${query} +link:${query}`
+    );
     res.json(results);
   } catch (error) {
     res.status(500).send("Error retrieving search results");
