@@ -4,12 +4,15 @@ const stealthPlugin = require("puppeteer-extra-plugin-stealth");
 const cheerio = require("cheerio");
 const dotenv = require("dotenv");
 const redis = require("redis");
+var cors = require("cors");
 
 dotenv.config();
 puppeteerExtra.use(stealthPlugin());
 
 const app = express();
 const PORT = 3000;
+
+app.use(cors());
 
 // Configurar Redis
 const redisUrl = "redis://default:yu3Cc503A29IyQdNfaVPorOUz@45.79.155.244:5600";
