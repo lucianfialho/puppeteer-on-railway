@@ -1,42 +1,3 @@
-const express = require("express");
-const puppeteerExtra = require("puppeteer-extra");
-const stealthPlugin = require("puppeteer-extra-plugin-stealth");
-const cheerio = require("cheerio");
-const dotenv = require("dotenv");
-const redis = require("redis");
-var cors = require("cors");
-
-dotenv.config();
-puppeteerExtra.use(stealthPlugin());
-
-const app = express();
-const PORT = 3000;
-
-app.use(cors());
-
-// Configurar Redis
-const redisUrl = "redis://default:yu3Cc503A29IyQdNfaVPorOUz@45.79.155.244:5600";
-const redisClient = redis.createClient({ url: redisUrl });
-
-redisClient.on("error", (err) => {
-  console.error("Redis Client Error", err);
-});
-
-redisClient.on("connect", () => {
-  console.log("Connected to Redis");
-});
-
-(async () => {
-  try {
-    await redisClient.connect();
-    console.log("Connected to Redis");
-  } catch (err) {
-    console.error("Failed to connect to Redis:", err);
-  }
-})();
-
-app.use(express.json());
-
 const getUserProfile = async (username) => {
   try {
     console.log(`Fetching profile for ${username}`);
@@ -141,6 +102,11 @@ const getUserProfile = async (username) => {
         user.recentGames.push(game);
       });
 
+      // Se não houver jogos recentes listados, considerar o perfil como privado
+      if (user.recentGames.length === 0) {
+        user.isPrivate = true;
+      }
+
       const banStatus = $(".profile_ban_status .profile_ban").text().trim();
       user.vacBanned = banStatus.includes("banimento VAC");
     }
@@ -155,18 +121,3 @@ const getUserProfile = async (username) => {
     throw err;
   }
 };
-
-app.post("/getUserProfile", async (req, res) => {
-  const { username } = req.body;
-  try {
-    const userProfile = await getUserProfile(username);
-    res.json(userProfile);
-  } catch (error) {
-    console.error(`Failed to fetch user profile for ${username}:`, error);
-    res.status(500).json({ error: "Failed to fetch user profile" });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Puppeteer service running on port ${PORT}`);
-});
