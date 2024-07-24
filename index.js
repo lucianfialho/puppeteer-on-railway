@@ -73,7 +73,7 @@ const checkCache = async (usernames) => {
   return cachedProfiles;
 };
 
-const fetchUserProfile = async ({ page, data: username }) => {
+const fetchUserProfile = async ({ page, data: { username } }) => {
   const user = {};
 
   await page.goto(`https://steamcommunity.com/profiles/${username}/`, {
@@ -142,7 +142,7 @@ const fetchUserProfile = async ({ page, data: username }) => {
   }
 
   user.riskScore = analyzeRisk(user);
-
+  console.log(username);
   // Armazenar no cache do Redis
   await redisClient.set(username, JSON.stringify(user), { EX: 604800 });
 
