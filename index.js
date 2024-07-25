@@ -41,14 +41,15 @@ app.use(express.json());
 const analyzeRisk = (user) => {
   let riskScore = 0;
 
-  if (user.vacBanned) riskScore += 50;
-  if (user.commentCheck) riskScore += 30;
-  if (user.isPrivate) riskScore += 20;
-  if (user.recentGames.length === 0) riskScore += 20;
+  if (user.vacBanned) return 99.9;
+  if (user.isPrivate) return 99.9;
+  if (user.recentGames.length === 0) return 99.9;
+
+  if (user.commentCheck) riskScore += 50;
 
   const csgo = user.recentGames.find((game) => game.id === "730");
-  if (csgo && parseFloat(csgo.hours) > 1000) riskScore += 20;
-  if (csgo && parseFloat(csgo.hours) > 500) riskScore += 10;
+  if (csgo && parseFloat(csgo.hours) > 1000) riskScore += 10;
+  if (csgo && parseFloat(csgo.hours) > 500) riskScore += 20;
 
   if (user.friends < 50) riskScore += 10;
   if (user.level < 10) riskScore += 10;
@@ -142,11 +143,23 @@ const fetchUserProfile = async ({ page, data: { username } }) => {
   }
 
   user.riskScore = analyzeRisk(user);
-  console.log(username);
+
   // Armazenar no cache do Redis
   await redisClient.set(username, JSON.stringify(user), { EX: 604800 });
 
   return { username, riskScore: user.riskScore };
+};
+
+// Função para calcular risco da lobby usando exponential smoothing
+const lobbyRiskExponential = (players) => {
+  if (players.length === 0) return 100;
+
+  const totalExponentialRisk = players.reduce(
+    (sum, player) => sum + Math.exp(player.riskScore / 10),
+    0
+  );
+
+  return (Math.log(totalExponentialRisk / players.length) * 10).toFixed(2);
 };
 
 app.post("/getUserProfiles", async (req, res) => {
@@ -164,7 +177,7 @@ app.post("/getUserProfiles", async (req, res) => {
       (username) => !cachedProfiles[username]
     );
 
-    let fetchedProfiles = {};
+    let fetchedProfiles = [];
     if (usernamesToFetch.length > 0) {
       const cluster = await Cluster.launch({
         concurrency: Cluster.CONCURRENCY_CONTEXT,
@@ -178,7 +191,7 @@ app.post("/getUserProfiles", async (req, res) => {
 
       await cluster.task(fetchUserProfile);
 
-      const fetchResults = await Promise.all(
+      fetchedProfiles = await Promise.all(
         usernamesToFetch.map((username) =>
           cluster.execute({ username }).catch((err) => {
             console.error(`Error fetching profile for ${username}:`, err);
@@ -190,16 +203,20 @@ app.post("/getUserProfiles", async (req, res) => {
       await cluster.idle();
       await cluster.close();
 
-      fetchedProfiles = fetchResults
-        .filter((result) => result !== null)
-        .reduce((acc, result) => {
-          acc[result.username] = result.riskScore;
-          return acc;
-        }, {});
+      fetchedProfiles = fetchedProfiles.filter((result) => result !== null);
     }
 
-    const allProfiles = { ...cachedProfiles, ...fetchedProfiles };
-    res.json(allProfiles);
+    const allProfiles = {
+      ...cachedProfiles,
+      ...Object.fromEntries(
+        fetchedProfiles.map((profile) => [profile.username, profile.riskScore])
+      ),
+    };
+
+    const lobbyRiskScore = lobbyRiskExponential(
+      Object.values(allProfiles).map((riskScore) => ({ riskScore }))
+    );
+    res.json({ profiles: allProfiles, lobbyRisk: parseFloat(lobbyRiskScore) });
   } catch (error) {
     console.error(`Failed to fetch user profiles:`, error);
     res.status(500).json({ error: "Failed to fetch user profiles" });
