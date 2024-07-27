@@ -1,11 +1,14 @@
 const express = require("express");
-const axios = require("axios");
+const puppeteerExtra = require("puppeteer-extra");
+const stealthPlugin = require("puppeteer-extra-plugin-stealth");
 const cheerio = require("cheerio");
 const dotenv = require("dotenv");
 const redis = require("redis");
 const cors = require("cors");
+const { Cluster } = require("puppeteer-cluster");
 
 dotenv.config();
+puppeteerExtra.use(stealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -71,73 +74,79 @@ const checkCache = async (usernames) => {
   return cachedProfiles;
 };
 
-const fetchUserProfile = async (username) => {
+const fetchUserProfile = async ({ page, data: { username } }) => {
   const user = {};
-  try {
-    const { data: html } = await axios.get(
-      `https://steamcommunity.com/profiles/${username}/`
-    );
-    const $ = cheerio.load(html);
 
-    const isPrivate = $(".profile_private_info").length > 0;
-    user.isPrivate = isPrivate;
+  await page.goto(`https://steamcommunity.com/profiles/${username}/`, {
+    waitUntil: "load",
+    timeout: 60000,
+  });
 
-    if (isPrivate) {
-      user.level = null;
-      user.friends = null;
-      user.recentGames = [];
-      user.vacBanned = null;
-    } else {
-      user.level = parseInt($(".friendPlayerLevelNum").text().trim(), 10) || 0;
-      user.friends =
-        parseInt(
-          $(".profile_friend_links .profile_count_link_total").text().trim(),
-          10
-        ) || 0;
-      user.recentGames = [];
-      $(".recent_game").each((i, element) => {
-        const game = {
-          id: $(element).find("a").attr("href").split("/").pop(),
-          title: $(element).find(".game_name a").text().trim(),
-          hours: $(element)
-            .find(".game_info_details")
-            .text()
-            .split(" hrs on record")[0]
-            .trim(),
-        };
-        user.recentGames.push(game);
-      });
+  const html = await page.content();
+  const $ = cheerio.load(html);
 
-      if (user.recentGames.length === 0) {
-        user.isPrivate = true;
-      }
+  const isPrivate = $(".profile_private_info").length > 0;
+  user.isPrivate = isPrivate;
 
-      const banStatus = $(".profile_ban_status .profile_ban").text().trim();
-      user.vacBanned = banStatus.includes("banimento VAC");
+  if (isPrivate) {
+    user.level = null;
+    user.friends = null;
+    user.recentGames = [];
+    user.vacBanned = null;
+  } else {
+    user.level = parseInt($(".friendPlayerLevelNum").text().trim(), 10) || 0;
+    user.friends =
+      parseInt(
+        $(".profile_friend_links .profile_count_link_total").text().trim(),
+        10
+      ) || 0;
+    user.recentGames = [];
+    $(".recent_game").each((i, element) => {
+      const game = {
+        id: $(element).find("a").attr("href").split("/").pop(),
+        title: $(element).find(".game_name a").text().trim(),
+        hours: $(element)
+          .find(".game_info_details")
+          .text()
+          .split(" hrs on record")[0]
+          .trim(),
+      };
+      user.recentGames.push(game);
+    });
 
-      // Buscar comentários
-      const commentsUrl = `https://steamcommunity.com/profiles/${username}/allcomments`;
-      const { data: commentsHtml } = await axios.get(commentsUrl);
-      const $comments = cheerio.load(commentsHtml);
-
-      user.comments = [];
-      $comments(".commentthread_comment_text").each((i, element) => {
-        const commentText = $comments(element).text().trim();
-        user.comments.push(commentText);
-      });
-
-      user.commentCheck = user.comments.some((comment) =>
-        /cheater|wall|xitado|XITER|xiter|Denúncia/i.test(comment)
-      );
+    if (user.recentGames.length === 0) {
+      user.isPrivate = true;
     }
 
-    user.riskScore = analyzeRisk(user);
+    const banStatus = $(".profile_ban_status .profile_ban").text().trim();
+    user.vacBanned = banStatus.includes("banimento VAC");
 
-    // Armazenar no cache do Redis
-    await redisClient.set(username, JSON.stringify(user), { EX: 604800 });
-  } catch (error) {
-    console.error(`Error fetching profile for ${username}:`, error);
+    await page.goto(
+      `https://steamcommunity.com/profiles/${username}/allcomments`,
+      {
+        waitUntil: "load",
+        timeout: 60000,
+      }
+    );
+    const commentsHtml = await page.content();
+    const $comments = cheerio.load(commentsHtml);
+
+    user.comments = [];
+    $comments(".commentthread_comment_text").each((i, element) => {
+      const commentText = $comments(element).text().trim();
+      user.comments.push(commentText);
+    });
+
+    user.commentCheck = user.comments.some((comment) =>
+      /cheater|wall|xitado|XITER|xiter|Denúncia/i.test(comment)
+    );
   }
+
+  user.riskScore = analyzeRisk(user);
+
+  // Armazenar no cache do Redis
+  await redisClient.set(username, JSON.stringify(user), { EX: 604800 });
+
   return { username, riskScore: user.riskScore };
 };
 
@@ -170,16 +179,29 @@ app.post("/getUserProfiles", async (req, res) => {
 
     let fetchedProfiles = [];
     if (usernamesToFetch.length > 0) {
+      const cluster = await Cluster.launch({
+        concurrency: Cluster.CONCURRENCY_CONTEXT,
+        maxConcurrency: 5,
+        puppeteer: puppeteerExtra,
+        puppeteerOptions: {
+          headless: true,
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        },
+      });
+
+      await cluster.task(fetchUserProfile);
+
       fetchedProfiles = await Promise.all(
-        usernamesToFetch.map(async (username) => {
-          try {
-            return await fetchUserProfile(username);
-          } catch (err) {
+        usernamesToFetch.map((username) =>
+          cluster.execute({ username }).catch((err) => {
             console.error(`Error fetching profile for ${username}:`, err);
             return null;
-          }
-        })
+          })
+        )
       );
+
+      await cluster.idle();
+      await cluster.close();
 
       fetchedProfiles = fetchedProfiles.filter((result) => result !== null);
     }
@@ -202,5 +224,5 @@ app.post("/getUserProfiles", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Service running on port ${PORT}`);
+  console.log(`Puppeteer service running on port ${PORT}`);
 });
