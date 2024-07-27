@@ -162,6 +162,66 @@ const lobbyRiskExponential = (players) => {
   return (Math.log(totalExponentialRisk / players.length) * 10).toFixed(2);
 };
 
+const initializeCluster = async () => {
+  const puppeteerOptions = {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
+      "--disable-background-networking",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-breakpad",
+      "--disable-client-side-phishing-detection",
+      "--disable-component-update",
+      "--disable-default-apps",
+      "--disable-domain-reliability",
+      "--disable-features=AudioServiceOutOfProcess",
+      "--disable-hang-monitor",
+      "--disable-ipc-flooding-protection",
+      "--disable-notifications",
+      "--disable-offer-store-unmasked-wallet-cards",
+      "--disable-offer-upload-credit-cards",
+      "--disable-print-preview",
+      "--disable-prompt-on-repost",
+      "--disable-renderer-backgrounding",
+      "--disable-sync",
+      "--force-color-profile=srgb",
+      "--metrics-recording-only",
+      "--mute-audio",
+      "--no-crash-upload",
+      "--no-default-browser-check",
+      "--no-pings",
+      "--no-sandbox",
+      "--password-store=basic",
+      "--use-gl=swiftshader",
+      "--use-mock-keychain",
+    ],
+  };
+
+  const cluster = await Cluster.launch({
+    concurrency: Cluster.CONCURRENCY_CONTEXT,
+    maxConcurrency: 5, // Ajustado para lidar com no máximo 5 jogadores por vez
+    puppeteer: puppeteerExtra,
+    puppeteerOptions,
+  });
+
+  await cluster.task(fetchUserProfile);
+
+  return cluster;
+};
+
+let cluster;
+initializeCluster().then((initializedCluster) => {
+  cluster = initializedCluster;
+});
+
 app.post("/getUserProfiles", async (req, res) => {
   const { usernames } = req.body;
 
@@ -179,29 +239,14 @@ app.post("/getUserProfiles", async (req, res) => {
 
     let fetchedProfiles = [];
     if (usernamesToFetch.length > 0) {
-      const cluster = await Cluster.launch({
-        concurrency: Cluster.CONCURRENCY_CONTEXT,
-        maxConcurrency: 3,
-        puppeteer: puppeteerExtra,
-        puppeteerOptions: {
-          headless: true,
-          args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        },
-      });
-
-      await cluster.task(fetchUserProfile);
-
-      fetchedProfiles = await Promise.all(
-        usernamesToFetch.map((username) =>
-          cluster.execute({ username }).catch((err) => {
-            console.error(`Error fetching profile for ${username}:`, err);
-            return null;
-          })
-        )
+      const clusterTasks = usernamesToFetch.map((username) =>
+        cluster.execute({ username }).catch((err) => {
+          console.error(`Error fetching profile for ${username}:`, err);
+          return null;
+        })
       );
 
-      await cluster.idle();
-      await cluster.close();
+      fetchedProfiles = await Promise.all(clusterTasks);
 
       fetchedProfiles = fetchedProfiles.filter((result) => result !== null);
     }
