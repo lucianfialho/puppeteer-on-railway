@@ -10,7 +10,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+  })
+);
 
 // Configurar Redis
 const redisUrl = process.env.REDIS_URL;
@@ -130,7 +134,7 @@ const fetchUserProfile = async (username) => {
         /cheater|wall|xitado|XITER|xiter|Denúncia/i.test(comment)
       );
     }
-
+    console.log(user);
     user.riskScore = analyzeRisk(user);
 
     // Armazenar no cache do Redis
