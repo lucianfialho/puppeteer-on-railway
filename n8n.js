@@ -8,6 +8,7 @@ const API_KEY = process.env.API_KEY || "minha-chave-secreta"; // API Key padrão
 
 // Middleware para validar API Key
 function checkApiKey(req, res, next) {
+
   const apiKey = req.headers["x-api-key"];
   if (!apiKey || apiKey !== API_KEY) {
     return res.status(403).json({ error: "Acesso negado. API Key inválida." });
@@ -16,7 +17,7 @@ function checkApiKey(req, res, next) {
 }
 
 async function scrapeNFCe(url) {
-  const browser = await puppeteer.launch({ headless: "new",
+  const browser = await puppeteer.launch({ headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
    });
   const page = await browser.newPage();
